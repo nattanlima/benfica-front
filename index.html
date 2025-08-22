@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabela de Categorização com Supabase</title>
+    <!-- Importa a fonte Montserrat do Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Importa a biblioteca do Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #f8f9fa;
+            color: #212529;
+            margin: 0;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+        h1 {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        p {
+            color: #6c757d;
+            margin-bottom: 2rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            table-layout: fixed;
+        }
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+            vertical-align: top;
+        }
+        th {
+            font-weight: 500;
+            color: #495057;
+            background-color: #f8f9fa;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        /* --- NOVOS ESTILOS PARA AS TAGS --- */
+        .tag-container {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 4px;
+        }
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 4px 8px;
+            border-radius: 16px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .tag-text {
+            margin-right: 6px;
+        }
+        .tag-close {
+            cursor: pointer;
+            font-weight: bold;
+            color: #6c757d;
+            transition: color 0.2s;
+        }
+        .tag-close:hover {
+            color: #212529;
+        }
+        .tag-input {
+            border: none;
+            outline: none;
+            background-color: transparent;
+            flex-grow: 1;
+            padding: 4px;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.9rem;
+            min-width: 100px;
+        }
+        /* --- FIM DOS NOVOS ESTILOS --- */
+
+        th:nth-child(1), td:nth-child(1) { width: 20%; }
+        th:nth-child(2), td:nth-child(2) { width: 15%; }
+        th:nth-child(3), td:nth-child(3) { width: 65%; }
+        button#saveButton {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 0.75rem 1.5rem;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #fff;
+            background-color: #00ba70;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+        button#saveButton:hover {
+            background-color: #009c5e;
+            transform: translateY(-2px);
+        }
+        #statusMessage {
+            position: fixed;
+            bottom: 6rem;
+            right: 2rem;
+            padding: 0.75rem 1.25rem;
+            background-color: #198754;
+            color: #fff;
+            border-radius: 6px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            transform: translateY(10px);
+            z-index: 1000;
+        }
+        #loader {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.2rem;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Tabela de categorização via IA</h1>
+        <p>Na coluna "CONTEXTO", digite uma palavra e pressione Enter para criar uma tag. Clique no "x" para remover.</p>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>TAG</th>
+                    <th>NÚMERO TAG</th>
+                    <th>CONTEXTO</th>
+                </tr>
+            </thead>
+            <tbody id="data-table-body">
+                <tr>
+                    <td colspan="3" id="loader">Carregando dados do Supabase...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <button id="saveButton">Salvar Alterações</button>
+    <div id="statusMessage"></div>
+
+    <script>
+        // --- Configuração do Cliente Supabase ---
+        const SUPABASE_URL = 'https://gfwwcclgvfyeudcxkxjy.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3djY2xndmZ5ZXVkY3hreGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc2NDg1MjcsImV4cCI6MjA1MzIyNDUyN30.Tz_NJ1wljI2p4GrIYat3_C_uJqU4b_pruN_-ootPqRQ';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // --- Elementos do DOM ---
+        const saveButton = document.getElementById('saveButton');
+        const tableBody = document.getElementById('data-table-body');
+        const statusMessage = document.getElementById('statusMessage');
+        const loader = document.getElementById('loader');
+
+        // --- Função para criar um elemento de tag ---
+        function createTagElement(text) {
+            const tag = document.createElement('div');
+            tag.className = 'tag';
+            
+            const tagText = document.createElement('span');
+            tagText.className = 'tag-text';
+            tagText.textContent = text;
+            
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'tag-close';
+            closeBtn.innerHTML = '&times;'; // Símbolo 'x'
+            
+            tag.appendChild(tagText);
+            tag.appendChild(closeBtn);
+            
+            return tag;
+        }
+
+        // --- Função para popular a célula de contexto com tags ---
+        function populateContextCell(cell, contextText) {
+            cell.innerHTML = ''; // Limpa a célula
+            const container = document.createElement('div');
+            container.className = 'tag-container';
+            
+            if (contextText && contextText.trim() !== '') {
+                const tags = contextText.split(',').map(t => t.trim()).filter(Boolean);
+                tags.forEach(tagText => {
+                    container.appendChild(createTagElement(tagText));
+                });
+            }
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'tag-input';
+            input.placeholder = 'Adicionar...';
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const newTagText = input.value.trim();
+                    if (newTagText) {
+                        const newTag = createTagElement(newTagText);
+                        container.insertBefore(newTag, input);
+                        input.value = '';
+                    }
+                }
+            });
+
+            container.appendChild(input);
+            cell.appendChild(container);
+        }
+
+        // --- Função para Carregar os Dados ---
+        async function loadData() {
+            const { data, error } = await supabaseClient
+                .from('TAGS-BENFICA')
+                .select('*')
+                .order('id', { ascending: true });
+
+            // *** MUDANÇA PARA MELHORAR O LOG DE ERRO ***
+            if (error) {
+                // Loga o objeto de erro completo para inspeção detalhada no console
+                console.error('Ocorreu um erro ao buscar os dados. Detalhes completos abaixo:');
+                // Tenta forçar a exibição do conteúdo do erro como texto
+                console.error('Mensagem do Erro:', error.message);
+                console.error('Erro completo (JSON):', JSON.stringify(error, null, 2));
+                
+                // Tenta dar uma mensagem mais específica para o usuário
+                if (error.message.includes('Fetch API') || error.message.includes('network error')) {
+                    loader.textContent = 'Falha de rede. Verifique a conexão e as configurações de CORS no Supabase.';
+                } else {
+                    loader.textContent = `Falha ao carregar: ${error.message}. Veja o console (F12) para mais detalhes.`;
+                }
+                return;
+            }
+
+            tableBody.innerHTML = '';
+
+            if (data.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Nenhum dado encontrado.</td></tr>';
+                return;
+            }
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.dataset.id = item.id;
+
+                const tagCell = document.createElement('td');
+                tagCell.textContent = item.nome || '';
+                
+                const idCell = document.createElement('td');
+                idCell.textContent = item.id || '';
+                
+                const contextCell = document.createElement('td');
+                populateContextCell(contextCell, item.contexto);
+
+                row.appendChild(tagCell);
+                row.appendChild(idCell);
+                row.appendChild(contextCell);
+                tableBody.appendChild(row);
+            });
+        }
+
+        // --- Event Listener para remover tags ---
+        tableBody.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tag-close')) {
+                e.target.parentElement.remove();
+            }
+        });
+
+        // --- Função para Salvar os Dados ---
+        saveButton.addEventListener('click', async () => {
+            showStatus('Salvando...', '#00ba70');
+            saveButton.disabled = true;
+
+            const rows = tableBody.querySelectorAll('tr');
+            const updatePromises = [];
+
+            rows.forEach(row => {
+                const id = row.dataset.id;
+                if (!id) return;
+
+                const contextCell = row.cells[2];
+                const tags = Array.from(contextCell.querySelectorAll('.tag-text'))
+                                .map(span => span.textContent.trim());
+                const novoContexto = tags.join(', ');
+
+                const promise = supabaseClient
+                    .from('TAGS-BENFICA')
+                    .update({ contexto: novoContexto })
+                    .eq('id', id);
+                
+                updatePromises.push(promise);
+            });
+
+            try {
+                const results = await Promise.all(updatePromises);
+                const hasError = results.some(res => res.error);
+                if (hasError) {
+                    const firstError = results.find(res => res.error)?.error;
+                    console.error('Pelo menos uma atualização falhou:', firstError);
+                    throw new Error(`Falha na atualização: ${firstError?.message || 'Erro desconhecido'}`);
+                }
+                showStatus('Alterações salvas com sucesso!', '#198754', 5000);
+            } catch (error) {
+                console.error('Erro ao salvar:', error);
+                showStatus('Falha ao salvar. Tente novamente.', '#dc3545', 5000);
+            } finally {
+                saveButton.disabled = false;
+            }
+        });
+
+        // --- Função Auxiliar para Mostrar Mensagens ---
+        function showStatus(message, color, duration = null) {
+            statusMessage.textContent = message;
+            statusMessage.style.backgroundColor = color;
+            statusMessage.style.opacity = '1';
+            statusMessage.style.transform = 'translateY(0)';
+
+            if (duration) {
+                setTimeout(() => {
+                    statusMessage.style.opacity = '0';
+                    statusMessage.style.transform = 'translateY(10px)';
+                }, duration);
+            }
+        }
+
+        // --- Carrega os dados quando a página é aberta ---
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabela de Categorização com Supabase</title>
+    <!-- Importa a fonte Montserrat do Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Importa a biblioteca do Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #f8f9fa;
+            color: #212529;
+            margin: 0;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+        h1 {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        p {
+            color: #6c757d;
+            margin-bottom: 2rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            table-layout: fixed;
+        }
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+            vertical-align: top;
+        }
+        th {
+            font-weight: 500;
+            color: #495057;
+            background-color: #f8f9fa;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        /* --- NOVOS ESTILOS PARA AS TAGS --- */
+        .tag-container {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 4px;
+        }
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 4px 8px;
+            border-radius: 16px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .tag-text {
+            margin-right: 6px;
+        }
+        .tag-close {
+            cursor: pointer;
+            font-weight: bold;
+            color: #6c757d;
+            transition: color 0.2s;
+        }
+        .tag-close:hover {
+            color: #212529;
+        }
+        .tag-input {
+            border: none;
+            outline: none;
+            background-color: transparent;
+            flex-grow: 1;
+            padding: 4px;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.9rem;
+            min-width: 100px;
+        }
+        /* --- FIM DOS NOVOS ESTILOS --- */
+
+        th:nth-child(1), td:nth-child(1) { width: 20%; }
+        th:nth-child(2), td:nth-child(2) { width: 15%; }
+        th:nth-child(3), td:nth-child(3) { width: 65%; }
+        button#saveButton {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 0.75rem 1.5rem;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #fff;
+            background-color: #00ba70;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+        button#saveButton:hover {
+            background-color: #009c5e;
+            transform: translateY(-2px);
+        }
+        #statusMessage {
+            position: fixed;
+            bottom: 6rem;
+            right: 2rem;
+            padding: 0.75rem 1.25rem;
+            background-color: #198754;
+            color: #fff;
+            border-radius: 6px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            transform: translateY(10px);
+            z-index: 1000;
+        }
+        #loader {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.2rem;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Tabela de categorização via IA</h1>
+        <p>Na coluna "CONTEXTO", digite uma palavra e pressione Enter para criar uma tag. Clique no "x" para remover.</p>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>TAG</th>
+                    <th>NÚMERO TAG</th>
+                    <th>CONTEXTO</th>
+                </tr>
+            </thead>
+            <tbody id="data-table-body">
+                <tr>
+                    <td colspan="3" id="loader">Carregando dados do Supabase...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <button id="saveButton">Salvar Alterações</button>
+    <div id="statusMessage"></div>
+
+    <script>
+        // --- Configuração do Cliente Supabase ---
+        const SUPABASE_URL = 'https://gfwwcclgvfyeudcxkxjy.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3djY2xndmZ5ZXVkY3hreGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc2NDg1MjcsImV4cCI6MjA1MzIyNDUyN30.Tz_NJ1wljI2p4GrIYat3_C_uJqU4b_pruN_-ootPqRQ';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // --- Elementos do DOM ---
+        const saveButton = document.getElementById('saveButton');
+        const tableBody = document.getElementById('data-table-body');
+        const statusMessage = document.getElementById('statusMessage');
+        const loader = document.getElementById('loader');
+
+        // --- Função para criar um elemento de tag ---
+        function createTagElement(text) {
+            const tag = document.createElement('div');
+            tag.className = 'tag';
+            
+            const tagText = document.createElement('span');
+            tagText.className = 'tag-text';
+            tagText.textContent = text;
+            
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'tag-close';
+            closeBtn.innerHTML = '&times;'; // Símbolo 'x'
+            
+            tag.appendChild(tagText);
+            tag.appendChild(closeBtn);
+            
+            return tag;
+        }
+
+        // --- Função para popular a célula de contexto com tags ---
+        function populateContextCell(cell, contextText) {
+            cell.innerHTML = ''; // Limpa a célula
+            const container = document.createElement('div');
+            container.className = 'tag-container';
+            
+            if (contextText && contextText.trim() !== '') {
+                const tags = contextText.split(',').map(t => t.trim()).filter(Boolean);
+                tags.forEach(tagText => {
+                    container.appendChild(createTagElement(tagText));
+                });
+            }
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'tag-input';
+            input.placeholder = 'Adicionar...';
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const newTagText = input.value.trim();
+                    if (newTagText) {
+                        const newTag = createTagElement(newTagText);
+                        container.insertBefore(newTag, input);
+                        input.value = '';
+                    }
+                }
+            });
+
+            container.appendChild(input);
+            cell.appendChild(container);
+        }
+
+        // --- Função para Carregar os Dados ---
+        async function loadData() {
+            const { data, error } = await supabaseClient
+                .from('TAGS-BENFICA')
+                .select('*')
+                .order('id', { ascending: true });
+
+            // *** MUDANÇA PARA MELHORAR O LOG DE ERRO ***
+            if (error) {
+                // Loga o objeto de erro completo para inspeção detalhada no console
+                console.error('Ocorreu um erro ao buscar os dados. Detalhes completos abaixo:');
+                // Tenta forçar a exibição do conteúdo do erro como texto
+                console.error('Mensagem do Erro:', error.message);
+                console.error('Erro completo (JSON):', JSON.stringify(error, null, 2));
+                
+                // Tenta dar uma mensagem mais específica para o usuário
+                if (error.message.includes('Fetch API') || error.message.includes('network error')) {
+                    loader.textContent = 'Falha de rede. Verifique a conexão e as configurações de CORS no Supabase.';
+                } else {
+                    loader.textContent = `Falha ao carregar: ${error.message}. Veja o console (F12) para mais detalhes.`;
+                }
+                return;
+            }
+
+            tableBody.innerHTML = '';
+
+            if (data.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Nenhum dado encontrado.</td></tr>';
+                return;
+            }
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.dataset.id = item.id;
+
+                const tagCell = document.createElement('td');
+                tagCell.textContent = item.nome || '';
+                
+                const idCell = document.createElement('td');
+                idCell.textContent = item.id || '';
+                
+                const contextCell = document.createElement('td');
+                populateContextCell(contextCell, item.contexto);
+
+                row.appendChild(tagCell);
+                row.appendChild(idCell);
+                row.appendChild(contextCell);
+                tableBody.appendChild(row);
+            });
+        }
+
+        // --- Event Listener para remover tags ---
+        tableBody.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tag-close')) {
+                e.target.parentElement.remove();
+            }
+        });
+
+        // --- Função para Salvar os Dados ---
+        saveButton.addEventListener('click', async () => {
+            showStatus('Salvando...', '#00ba70');
+            saveButton.disabled = true;
+
+            const rows = tableBody.querySelectorAll('tr');
+            const updatePromises = [];
+
+            rows.forEach(row => {
+                const id = row.dataset.id;
+                if (!id) return;
+
+                const contextCell = row.cells[2];
+                const tags = Array.from(contextCell.querySelectorAll('.tag-text'))
+                                .map(span => span.textContent.trim());
+                const novoContexto = tags.join(', ');
+
+                const promise = supabaseClient
+                    .from('TAGS-BENFICA')
+                    .update({ contexto: novoContexto })
+                    .eq('id', id);
+                
+                updatePromises.push(promise);
+            });
+
+            try {
+                const results = await Promise.all(updatePromises);
+                const hasError = results.some(res => res.error);
+                if (hasError) {
+                    const firstError = results.find(res => res.error)?.error;
+                    console.error('Pelo menos uma atualização falhou:', firstError);
+                    throw new Error(`Falha na atualização: ${firstError?.message || 'Erro desconhecido'}`);
+                }
+                showStatus('Alterações salvas com sucesso!', '#198754', 5000);
+            } catch (error) {
+                console.error('Erro ao salvar:', error);
+                showStatus('Falha ao salvar. Tente novamente.', '#dc3545', 5000);
+            } finally {
+                saveButton.disabled = false;
+            }
+        });
+
+        // --- Função Auxiliar para Mostrar Mensagens ---
+        function showStatus(message, color, duration = null) {
+            statusMessage.textContent = message;
+            statusMessage.style.backgroundColor = color;
+            statusMessage.style.opacity = '1';
+            statusMessage.style.transform = 'translateY(0)';
+
+            if (duration) {
+                setTimeout(() => {
+                    statusMessage.style.opacity = '0';
+                    statusMessage.style.transform = 'translateY(10px)';
+                }, duration);
+            }
+        }
+
+        // --- Carrega os dados quando a página é aberta ---
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>
