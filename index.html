@@ -55,7 +55,7 @@
             border-bottom: none;
         }
         
-        /* --- NOVOS ESTILOS PARA AS TAGS --- */
+        /* --- ESTILOS PARA AS TAGS --- */
         .tag-container {
             display: flex;
             flex-wrap: wrap;
@@ -95,7 +95,7 @@
             font-size: 0.9rem;
             min-width: 100px;
         }
-        /* --- FIM DOS NOVOS ESTILOS --- */
+        /* --- FIM DOS ESTILOS --- */
 
         th:nth-child(1), td:nth-child(1) { width: 20%; }
         th:nth-child(2), td:nth-child(2) { width: 15%; }
@@ -238,15 +238,11 @@
                 .select('*')
                 .order('id', { ascending: true });
 
-            // *** MUDANÇA PARA MELHORAR O LOG DE ERRO ***
             if (error) {
-                // Loga o objeto de erro completo para inspeção detalhada no console
                 console.error('Ocorreu um erro ao buscar os dados. Detalhes completos abaixo:');
-                // Tenta forçar a exibição do conteúdo do erro como texto
                 console.error('Mensagem do Erro:', error.message);
                 console.error('Erro completo (JSON):', JSON.stringify(error, null, 2));
                 
-                // Tenta dar uma mensagem mais específica para o usuário
                 if (error.message.includes('Fetch API') || error.message.includes('network error')) {
                     loader.textContent = 'Falha de rede. Verifique a conexão e as configurações de CORS no Supabase.';
                 } else {
